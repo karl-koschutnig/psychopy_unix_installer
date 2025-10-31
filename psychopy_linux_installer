@@ -2708,6 +2708,30 @@ PY
         verify_installed_pip_versions "${pip_extra_packages}"
     fi
 
+    # Initialize PsychoPy cache directories for all target users
+    log_message "INFO: Creating PsychoPy cache directories for target users..."
+    for user in "${TARGET_USERS[@]}"; do
+        user_home=$(getent passwd "${user}" | cut -d: -f6 2>/dev/null || echo "")
+        if [ -z "${user_home}" ]; then
+            # On macOS, getent may not work, try dscl or fall back to HOME
+            if [[ "${OSTYPE}" =~ darwin ]]; then
+                user_home=$(dscl . -read "/Users/${user}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+                [ -z "${user_home}" ] && [ "${user}" = "$(whoami)" ] && user_home="${HOME}"
+            fi
+        fi
+        if [ -n "${user_home}" ] && [ -d "${user_home}" ]; then
+            cache_dir="${user_home}/.psychopy3/cache/appCache"
+            sudo_wrapper mkdir -p "${cache_dir}"
+            if [ -d "${cache_dir}" ]; then
+                log_message "INFO: Created cache directory for user ${user}: ${cache_dir}"
+            else
+                log_message "WARNING: Failed to create cache directory for user ${user}"
+            fi
+        else
+            log_message "WARNING: Could not determine home directory for user: ${user}"
+        fi
+    done
+
     deactivate
 
 
