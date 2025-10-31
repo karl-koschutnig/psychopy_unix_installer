@@ -1801,17 +1801,23 @@ PY
     audio_py=$(cat <<'PY'
 """
 Stub audio module for psychtoolbox on macOS.
+Provides mock implementations for PsychoPy compatibility.
 """
 
-class _PTBAudioUnavailable:
-    def __getattr__(self, name):
-        raise RuntimeError(
-            "psychtoolbox.audio is unavailable on this macOS install due to libusb linking. "
-            "For audio features, rebuild psychtoolbox with Homebrew libusb properly linked."
-        )
+def get_devices(device_type=None):
+    """
+    Return empty list of audio devices.
+    PsychoPy will use its fallback audio backend.
+    """
+    return []
 
-# Create instance so 'import psychtoolbox.audio as ptb' works
-__getattr__ = _PTBAudioUnavailable().__getattr__
+def __getattr__(name):
+    """
+    For any other audio functions, return a no-op function.
+    """
+    def _stub_func(*args, **kwargs):
+        return None
+    return _stub_func
 PY
 )
 
