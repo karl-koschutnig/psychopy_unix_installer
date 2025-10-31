@@ -2418,7 +2418,9 @@ main() {
     done
 
     if ${USE_GUI}; then
-        if ! command -v zenity &>/dev/null; then
+        if [[ "${OSTYPE}" =~ darwin ]]; then
+            log_message "ERROR: GUI mode is not supported on macOS. Please use the CLI mode instead: bash ./psychopy_linux_installer" nolog
+        elif ! command -v zenity &>/dev/null; then
             log_message "ERROR: zenity is not installed or not available in PATH. Cannot use GUI mode." nolog
         else
             check_script_update
