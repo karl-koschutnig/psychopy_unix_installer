@@ -1786,16 +1786,6 @@ def WaitSecs(duration):
     """Wait for specified duration in seconds."""
     _time.sleep(duration)
 
-# Stub for audio module
-class _PTBAudioUnavailable:
-    def __getattr__(self, name):
-        raise RuntimeError(
-            "psychtoolbox.audio is unavailable on this macOS install due to libusb linking. "
-            "For audio features, rebuild psychtoolbox with Homebrew libusb properly linked."
-        )
-
-audio = _PTBAudioUnavailable()
-
 # Stub for PsychHID
 class _PTBHIDUnavailable:
     def __getattr__(self, name):
@@ -1808,7 +1798,25 @@ PsychHID = _PTBHIDUnavailable()
 PY
 )
 
+    audio_py=$(cat <<'PY'
+"""
+Stub audio module for psychtoolbox on macOS.
+"""
+
+class _PTBAudioUnavailable:
+    def __getattr__(self, name):
+        raise RuntimeError(
+            "psychtoolbox.audio is unavailable on this macOS install due to libusb linking. "
+            "For audio features, rebuild psychtoolbox with Homebrew libusb properly linked."
+        )
+
+# Create instance so 'import psychtoolbox.audio as ptb' works
+__getattr__ = _PTBAudioUnavailable().__getattr__
+PY
+)
+
     printf "%s\n" "${init_py}" | tee "${stub_root}/__init__.py" >/dev/null
+    printf "%s\n" "${audio_py}" | tee "${stub_root}/audio.py" >/dev/null
     set_shared_permissions "${PSYCHOPY_DIR}/stubs" recursive
 }
 
