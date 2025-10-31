@@ -2387,6 +2387,9 @@ create_start_psychopy_wrapper() {
             "    echo \"[start_psychopy] WARNING: Could not change to workspace directory.\"" \
             "fi" \
             "" \
+            "# Set library path for macOS compatibility with psychtoolbox and other native extensions" \
+            "export DYLD_LIBRARY_PATH=/opt/homebrew/lib:\${DYLD_LIBRARY_PATH}" \
+            "" \
             "exec \"\${SCRIPT_DIR}/.venv/bin/psychopy\" \"\$@\""
     )
     printf "%s\n" "${wrapper_script}" | tee "${wrapper_path}" >/dev/null
@@ -2568,12 +2571,11 @@ main() {
     # Upgrade pip and install required Python packages
     log_message "INFO: Upgrading 'pip' 'distro', 'sip', 'six', 'psychtoolbox', 'attrdict', 'setuptools', 'wheel' ..."
     if [[ "${OSTYPE}" =~ darwin ]]; then
-        # Skip psychtoolbox on macOS due to libusb linking issues
-        log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six setuptools wheel
-        log_message "WARNING: Skipping psychtoolbox on macOS due to libusb compatibility issues."
-    else
-        log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six psychtoolbox setuptools wheel
+        # On macOS, ensure homebrew libraries are accessible
+        export DYLD_LIBRARY_PATH=/opt/homebrew/lib:${DYLD_LIBRARY_PATH}
+        log_message "INFO: Set DYLD_LIBRARY_PATH for macOS native extensions"
     fi
+    log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six psychtoolbox setuptools wheel
     if [[ "${PYTHON_VERSION}" =~ ^3\.8(\.|$) || "${PYTHON_VERSION}" =~ ^3\.9(\.|$) ]]; then
         log "${UV_INSTALL_DIR}/uv" pip install -U attrdict
     else
