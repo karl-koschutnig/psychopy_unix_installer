@@ -2455,6 +2455,8 @@ create_start_psychopy_wrapper() {
         "export DYLD_LIBRARY_PATH=/opt/homebrew/lib:\${DYLD_LIBRARY_PATH}" \
         "# Prepend stubs so optional shims (e.g., psychtoolbox) can load on macOS if native libs are unavailable" \
         "export PYTHONPATH=\"${PSYCHOPY_DIR}/stubs:\${PYTHONPATH}\"" \
+        "# Suppress wxPython font warnings on macOS (harmless system font loading issues)" \
+        "export PYTHONWARNINGS=\"ignore::UserWarning:wx.core\"" \
             "" \
             "exec \"\${SCRIPT_DIR}/.venv/bin/psychopy\" \"\$@\""
     )
@@ -2646,7 +2648,7 @@ main() {
         export LIBRARY_PATH="${HOMEBREW_PREFIX}/opt/libusb/lib:${LIBRARY_PATH}"
         log_message "INFO: macOS build env set: DYLD_LIBRARY_PATH, PKG_CONFIG_PATH, LDFLAGS, CPPFLAGS for libusb/psychtoolbox."
     fi
-    log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six psychtoolbox setuptools wheel
+    log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six psychtoolbox setuptools wheel sounddevice
     if [[ "${PYTHON_VERSION}" =~ ^3\.8(\.|$) || "${PYTHON_VERSION}" =~ ^3\.9(\.|$) ]]; then
         log "${UV_INSTALL_DIR}/uv" pip install -U attrdict
     else
@@ -2727,6 +2729,14 @@ PY
             else
                 log_message "WARNING: Failed to create cache directory for user ${user}"
             fi
+            
+            # Configure audio preferences with sounddevice fallback
+            log_message "INFO: Configuring audio preferences for user ${user}..."
+            "${PSYCHOPY_DIR}/.venv/bin/python" - <<'PYCONF'
+from psychopy import prefs
+prefs.hardware['audioLib'] = ['sounddevice', 'ptb']
+prefs.saveUserPrefs()
+PYCONF
         else
             log_message "WARNING: Could not determine home directory for user: ${user}"
         fi
