@@ -2567,7 +2567,13 @@ main() {
 
     # Upgrade pip and install required Python packages
     log_message "INFO: Upgrading 'pip' 'distro', 'sip', 'six', 'psychtoolbox', 'attrdict', 'setuptools', 'wheel' ..."
-    log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six psychtoolbox setuptools wheel
+    if [[ "${OSTYPE}" =~ darwin ]]; then
+        # Skip psychtoolbox on macOS due to libusb linking issues
+        log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six setuptools wheel
+        log_message "WARNING: Skipping psychtoolbox on macOS due to libusb compatibility issues."
+    else
+        log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six psychtoolbox setuptools wheel
+    fi
     if [[ "${PYTHON_VERSION}" =~ ^3\.8(\.|$) || "${PYTHON_VERSION}" =~ ^3\.9(\.|$) ]]; then
         log "${UV_INSTALL_DIR}/uv" pip install -U attrdict
     else
