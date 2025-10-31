@@ -1,4 +1,4 @@
-# PsychoPy Installation Script for Linux
+# PsychoPy Installation Script for Linux & macOS
 
 [![GitHub Release](https://img.shields.io/github/v/release/wieluk/psychopy_linux_installer)](https://github.com/wieluk/psychopy_linux_installer/releases)
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/wieluk/psychopy_linux_installer/scheduled_workflow.yaml?branch=main)](https://github.com/wieluk/psychopy_linux_installer/actions)
@@ -7,7 +7,7 @@
 
 ---
 
-This script automates the installation of [PsychoPy](https://www.psychopy.org/) on a wide range of Linux distributions, handling all dependencies and environment setup for you.
+This script automates the installation of [PsychoPy](https://www.psychopy.org/) on a wide range of Linux distributions and macOS systems, handling all dependencies and environment setup for you.
 
 ## Table of Contents
 
@@ -24,6 +24,7 @@ This script automates the installation of [PsychoPy](https://www.psychopy.org/) 
 
 ## Supported and Tested Distributions
 
+### Linux Distributions
 The installer has been tested and confirmed to work on the following Linux distributions:
 
 - **Ubuntu:** 24.04, 22.04, 20.04
@@ -36,7 +37,15 @@ The installer has been tested and confirmed to work on the following Linux distr
 - **openSUSE:** 15
 - **Manjaro:** 25
 
-While these distributions are tested, the script is designed to be compatible with other Linux distributions as well.
+### macOS
+The installer also supports macOS with the following versions:
+- **macOS:** 11 (Big Sur) and later
+
+#### macOS Prerequisites
+- **Homebrew:** Must be installed. If not already installed, visit [brew.sh](https://brew.sh)
+- **curl:** Usually pre-installed on macOS. If not, install with: `brew install curl`
+
+While the distributions listed above are tested, the script is designed to be compatible with other Linux distributions and recent macOS versions as well.
 
 ## Usage
 

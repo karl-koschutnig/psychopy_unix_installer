@@ -1,15 +1,15 @@
 #!/bin/bash
 # ===============================================================================
-#  Title:         psychopy_linux_installer
+#  Title:         psychopy_installer (PsychoPy for Linux & macOS)
 #  Description:   This script installs PsychoPy with specified versions of
-#                 Python, wxPython, and optional packages.
+#                 Python, wxPython, and optional packages on Linux and macOS.
 #  Author:        Lukas Wiertz
 #  Date:          2024-10-06
-#  Last Updated:  2025-10-19
+#  Last Updated:  2025-10-30
 #  License:       GNU General Public License v3.0
 # ===============================================================================
 
-SCRIPT_VERSION="2.2.4"
+SCRIPT_VERSION="2.3.0"
 
 # Define default values
 CURRENT_USER="$(id -un)"
@@ -965,6 +965,19 @@ detect_os_version() {
     OS_VERSION_LINK=""
     OS_VERSION_FULL=""
 
+    # Check for macOS first
+    if [[ "${OSTYPE}" =~ darwin ]]; then
+        local macos_version
+        macos_version=$(sw_vers -productVersion)
+        local major_version=$(echo "${macos_version}" | cut -d. -f1)
+        
+        OS_VERSION="macos-${major_version}"
+        OS_VERSION_FULL="macos-${macos_version}"
+        OS_VERSION_LINK="macos-${major_version}"
+        return
+    fi
+
+    # Linux OS detection
     local major_version version ID VERSION_ID
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -1007,7 +1020,15 @@ detect_os_version() {
 }
 
 detect_package_manager() {
-    if command -v apt-get >/dev/null 2>&1; then
+    if [[ "${OSTYPE}" =~ darwin ]]; then
+        # macOS
+        if command -v brew >/dev/null 2>&1; then
+            PKG_MANAGER="brew"
+        else
+            log_message "ERROR: Homebrew not found. Please install Homebrew first: https://brew.sh"
+            exit 1
+        fi
+    elif command -v apt-get >/dev/null 2>&1; then
         PKG_MANAGER="apt-get"
     elif command -v dnf >/dev/null 2>&1; then
         PKG_MANAGER="dnf"
@@ -1032,6 +1053,9 @@ update_package_manager() {
 
     log_message "INFO: Updating '${PKG_MANAGER}' package manager."
     case ${PKG_MANAGER} in
+    brew)
+        sudo_wrapper brew update
+        ;;
     apt-get) sudo_wrapper apt-get update -qq ;;
     yum  |dnf) sudo_wrapper "${PKG_MANAGER}" makecache -q ;;
     pacman)
@@ -1055,6 +1079,7 @@ update_package_manager() {
 # Checks if the provided package is installed.
 is_package_installed() {
     case "${PKG_MANAGER}" in
+    brew) brew list "$1" &>/dev/null ;;
     apt-get) dpkg -s "$1" &>/dev/null ;;
     yum | dnf) rpm -q "$1" &>/dev/null ;;
     pacman) pacman -Q "$1" &>/dev/null ;;
@@ -1073,6 +1098,7 @@ filter_installable_packages() {
 
     for package in "${@}"; do
         case "${OS_VERSION}" in
+        macos-*) result_array+=("${package}") && continue ;;  # macOS: keep all packages for Homebrew
         ubuntu-24) [[ "${package}" == "libwebkit2gtk-4.0-dev" ]] && continue ;;
         ubuntu-20) [[ "${package}" == "libwebkit2gtk-4.1-dev" ]] && continue ;;
         debian-11) [[ "${package}" == "libwebkit2gtk-4.1-dev" ]] && continue ;;
@@ -1088,6 +1114,11 @@ filter_installable_packages() {
     [ ${#candidates[@]} -eq 0 ] && return
 
     case "${PKG_MANAGER}" in
+    brew)
+        for candidate in "${candidates[@]}"; do
+            brew search "${candidate}" &>/dev/null && result_array+=("${candidate}")
+        done
+        ;;
     apt-get)
         output=$(apt-cache search --names-only . 2>/dev/null | awk '{print $1}' | sort)
         for candidate in "${candidates[@]}"; do
@@ -1228,6 +1259,7 @@ install_packages() {
         log_message "INFO: Installing '${to_install[*]}'"
         if {
             case "${PKG_MANAGER}" in
+            brew) sudo_wrapper brew install "${to_install[@]}" ;;
             apt-get) sudo_wrapper apt-get install -y -qq "${to_install[@]}" ;;
             yum) sudo_wrapper yum install -y -q "${to_install[@]}" ;;
             dnf) sudo_wrapper dnf install -y -q "${to_install[@]}" ;;
@@ -1240,6 +1272,7 @@ install_packages() {
             log_message "WARNING: ${PKG_MANAGER} batch installation failed. Falling back to per-package installation. This might take sometime ..."
             for package in "${to_install[@]}"; do
                 case ${PKG_MANAGER} in
+                brew) sudo_wrapper brew install "${package}" || log log_message "WARNING: Package '${package}' not found, skipping." ;;
                 apt-get) sudo_wrapper apt-get install -y -qq "${package}" || log log_message "WARNING: Package '${package}' not found, skipping." ;;
                 yum) sudo_wrapper yum install -y -q "${package}" || log log_message "WARNING: Package '${package}' not found, skipping." ;;
                 dnf) sudo_wrapper dnf install -y -q "${package}" || log log_message "WARNING: Package '${package}' not found, skipping." ;;
@@ -1282,6 +1315,14 @@ install_dependencies() {
     fi
 
     case ${PKG_MANAGER} in
+    brew)
+        # macOS via Homebrew - only system dependencies, NOT Python
+        script_deps=(curl git jq)
+        psychopy_deps=(libusb portaudio sdl2)
+        build_deps=(pkg-config)
+        fonts=()  # macOS has system fonts
+        wxpython_deps=(gtk+3 gstreamer gst-plugins-base)
+        ;;
     apt-get)
         script_deps=(curl git jq)
         psychopy_deps=(libasound2-dev libegl1-mesa-dev libglib2.0-dev libgtk-3-dev libnotify4 libusb-1.0-0-dev libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 libsdl2-dev libglu1-mesa-dev portaudio19-dev pulseaudio pulseaudio-utils)
@@ -1342,6 +1383,9 @@ remove_system_packages() {
     fi
 
     case "${PKG_MANAGER}" in
+    brew)
+        sudo_wrapper brew uninstall "${installed_packages[@]}"
+        ;;
     apt-get)
         sudo_wrapper apt-get remove -y "${installed_packages[@]}"
         ;;
@@ -1445,7 +1489,7 @@ parse_requirements_file() {
 
     # Adjust Linux dependencies
     for pkg in pyglet python-vlc; do
-        pkg_lower="${pkg,,}"
+        pkg_lower=$(echo "${pkg}" | tr '[:upper:]' '[:lower:]')
         if [[ -n "${package_versions[${pkg_lower}]}" ]]; then
             version="${package_versions[${pkg_lower}]}"
             original_spec="${pkg_lower}${package_operators[${pkg_lower}]}${version}"
@@ -1852,7 +1896,14 @@ prepare_psychopy_directory() {
 }
 
 # Sets up the 'psychopy' group, adds the user, and configures system limits.
+# Note: This is Linux-specific and is skipped on macOS
 setup_psychopy_group_and_limits() {
+    # Skip on macOS
+    if [[ "${OSTYPE}" =~ darwin ]]; then
+        log_message "INFO: Skipping security group/limits setup on macOS."
+        return
+    fi
+
     # Check if limits file exists before writing
     local limits_file="/etc/security/limits.d/99-psychopylimits.conf"
     local user
@@ -1898,7 +1949,15 @@ setup_psychopy_group_and_limits() {
 }
 
 # Creates desktop shortcuts for PsychoPy applications.
+# Note: This function is designed for Linux; on macOS, use 'open -a' or create aliases
 create_desktop_shortcut() {
+    # Skip on macOS - Launchers are created through wrapper script and terminal aliases
+    if [[ "${OSTYPE}" =~ darwin ]]; then
+        log_message "INFO: Skipping Linux-style desktop shortcuts on macOS."
+        log_message "INFO: Use 'PsychoPy' or alias defined in ~/.zprofile to launch PsychoPy."
+        return
+    fi
+
     local resources_dir system_app_dir global_app_dir
     local icon_url spec args label icon
     local user user_home user_app_dir desktop_dir link_src link_dst
@@ -2029,19 +2088,23 @@ create_desktop_shortcut() {
 
 # Adds the PsychoPy installation's bin directory to the PATH and records link location.
 add_psychopy_to_path() {
-    local launcher_source="${PSYCHOPY_DIR}/start_psychopy"
+    local launcher_source="$(cd "${PSYCHOPY_DIR}" && pwd)/start_psychopy"
     local global_link="/usr/local/bin/${VENV_NAME}"
     local user per_bin per_link home_dir
     PSYCHOPY_LAUNCHER_LINK=()
     log_message "INFO: Adding PsychoPy to PATH for users: ${TARGET_USERS[*]}"
 
     if [[ ":$PATH:" == *":/usr/local/bin:"* ]]; then
-        if sudo_wrapper ln -sf "${launcher_source}" "${global_link}"; then
-            PSYCHOPY_LAUNCHER_LINK+=("${global_link}")
-            log_message "INFO: PsychoPy added to path globally at ${global_link}."
-            return 0
+        if [ -d /usr/local/bin ] || sudo_wrapper mkdir -p /usr/local/bin; then
+            if sudo_wrapper ln -sf "${launcher_source}" "${global_link}"; then
+                PSYCHOPY_LAUNCHER_LINK+=("${global_link}")
+                log_message "INFO: PsychoPy added to path globally at ${global_link}."
+                return 0
+            else
+                log_message "WARNING: Global path link failed, falling back to per‐user."
+            fi
         else
-            log_message "WARNING: Global path link failed, falling back to per‐user."
+            log_message "WARNING: Cannot create /usr/local/bin directory, falling back to per‐user symlink."
         fi
     else
         log_message "WARNING: /usr/local/bin not in PATH, falling back to per‐user symlink."
@@ -2257,9 +2320,9 @@ create_start_psychopy_wrapper() {
             "        exit 0" \
             "    fi" \
             "" \
-            "    case \"\${NON_INTERACTIVE_ARG,,}\" in" \
+            "    case \"\$(echo \${NON_INTERACTIVE_ARG} | tr '[:upper:]' '[:lower:]')\" in" \
             "        y|n)" \
-            "            mode=\"\${NON_INTERACTIVE_ARG,,}\"" \
+            "            mode=\"\$(echo \${NON_INTERACTIVE_ARG} | tr '[:upper:]' '[:lower:]')\"" \
             "            if sudo -n true 2>/dev/null; then SUDO=\"sudo\"; else SUDO=\"\"; fi" \
             "            ;;" \
             "        *)" \
@@ -2374,7 +2437,9 @@ main() {
         fi
     fi
 
-    if [[ "${VENV_NAME,,}" =~ ^(\.?python|\.?uv)$ ]]; then
+    local venv_lower
+    venv_lower=$(echo "${VENV_NAME}" | tr '[:upper:]' '[:lower:]')
+    if [[ "${venv_lower}" =~ ^(\.?python|\.?uv)$ ]]; then
         log_message "ERROR: The virtual environment name cannot be 'python', '.python', 'uv', or '.uv'. It is best to choose something unique to avoid conflicts." nolog
     fi
 
