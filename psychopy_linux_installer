@@ -1762,6 +1762,42 @@ install_wxpython() {
     fi
 }
 
+# Creates a minimal stub for the psychtoolbox package on macOS to avoid import errors in PsychoPy UI.
+create_psychtoolbox_stub() {
+    local stub_root="${PSYCHOPY_DIR}/stubs/psychtoolbox"
+    local init_py audio_py
+    sudo_wrapper mkdir -p "${stub_root}"
+
+    init_py=$(cat <<'PY'
+"""
+Lightweight shim for psychtoolbox on macOS when native binary fails to load.
+This provides minimal symbols so PsychoPy UI can start. Any functional use
+will raise a clear error explaining how to enable the real psychtoolbox.
+"""
+from . import audio  # noqa: F401
+
+__version__ = "shim"
+PY
+)
+
+    audio_py=$(cat <<'PY'
+class _PTBUnavailable:
+    def __getattr__(self, name):
+        raise RuntimeError(
+            "psychtoolbox is unavailable on this macOS install due to libusb linking. "
+            "If you need PTB audio/HID, install libusb via Homebrew and rebuild psychtoolbox "
+            "inside PsychoPy's venv with appropriate env vars (PKG_CONFIG_PATH/LDFLAGS/CPPFLAGS)."
+        )
+
+audio = _PTBUnavailable()
+PY
+)
+
+    printf "%s\n" "${init_py}" | tee "${stub_root}/__init__.py" >/dev/null
+    printf "%s\n" "${audio_py}" | tee "${stub_root}/audio.py" >/dev/null
+    set_shared_permissions "${PSYCHOPY_DIR}/stubs" recursive
+}
+
 # Attempts to install wxPython from a GitHub released wheel.
 install_wxpython_from_github() {
     local wheel_name download_url renamed_wheel python_abi
@@ -2387,8 +2423,10 @@ create_start_psychopy_wrapper() {
             "    echo \"[start_psychopy] WARNING: Could not change to workspace directory.\"" \
             "fi" \
             "" \
-            "# Set library path for macOS compatibility with psychtoolbox and other native extensions" \
-            "export DYLD_LIBRARY_PATH=/opt/homebrew/lib:\${DYLD_LIBRARY_PATH}" \
+        "# Set library path for macOS compatibility with psychtoolbox and other native extensions" \
+        "export DYLD_LIBRARY_PATH=/opt/homebrew/lib:\${DYLD_LIBRARY_PATH}" \
+        "# Prepend stubs so optional shims (e.g., psychtoolbox) can load on macOS if native libs are unavailable" \
+        "export PYTHONPATH=\"${PSYCHOPY_DIR}/stubs:\${PYTHONPATH}\"" \
             "" \
             "exec \"\${SCRIPT_DIR}/.venv/bin/psychopy\" \"\$@\""
     )
@@ -2571,9 +2609,14 @@ main() {
     # Upgrade pip and install required Python packages
     log_message "INFO: Upgrading 'pip' 'distro', 'sip', 'six', 'psychtoolbox', 'attrdict', 'setuptools', 'wheel' ..."
     if [[ "${OSTYPE}" =~ darwin ]]; then
-        # On macOS, ensure homebrew libraries are accessible
-        export DYLD_LIBRARY_PATH=/opt/homebrew/lib:${DYLD_LIBRARY_PATH}
-        log_message "INFO: Set DYLD_LIBRARY_PATH for macOS native extensions"
+        # On macOS, ensure Homebrew libraries are found at build and runtime (needed for psychtoolbox/libusb)
+        export HOMEBREW_PREFIX="/opt/homebrew"
+        export DYLD_LIBRARY_PATH="${HOMEBREW_PREFIX}/lib:${DYLD_LIBRARY_PATH}"
+        export PKG_CONFIG_PATH="${HOMEBREW_PREFIX}/lib/pkgconfig:${HOMEBREW_PREFIX}/opt/libusb/lib/pkgconfig:${PKG_CONFIG_PATH}"
+        export LDFLAGS="-L${HOMEBREW_PREFIX}/opt/libusb/lib ${LDFLAGS}"
+        export CPPFLAGS="-I${HOMEBREW_PREFIX}/opt/libusb/include ${CPPFLAGS}"
+        export LIBRARY_PATH="${HOMEBREW_PREFIX}/opt/libusb/lib:${LIBRARY_PATH}"
+        log_message "INFO: macOS build env set: DYLD_LIBRARY_PATH, PKG_CONFIG_PATH, LDFLAGS, CPPFLAGS for libusb/psychtoolbox."
     fi
     log "${UV_INSTALL_DIR}/uv" pip install -U pip distro sip six psychtoolbox setuptools wheel
     if [[ "${PYTHON_VERSION}" =~ ^3\.8(\.|$) || "${PYTHON_VERSION}" =~ ^3\.9(\.|$) ]]; then
@@ -2602,6 +2645,20 @@ main() {
     if check_pypi_search_dependency "${PSYCHOPY_VERSION}"; then
         log_message "INFO: Installing patched pypi-search dependency..."
         log "${UV_INSTALL_DIR}/uv" pip install "git+https://github.com/wieluk/pypi-search"
+    fi
+
+    # On macOS, verify psychtoolbox import and fallback to a stub if native binary fails to load
+    if [[ "${OSTYPE}" =~ darwin ]]; then
+        if ! "${PSYCHOPY_DIR}/.venv/bin/python" - <<'PY'
+try:
+    import psychtoolbox, psychtoolbox.PsychHID  # noqa: F401
+except Exception:
+    raise SystemExit(1)
+PY
+        then
+            log_message "WARNING: 'psychtoolbox' failed to import on macOS. Creating a lightweight stub so PsychoPy UI can start."
+            create_psychtoolbox_stub
+        fi
     fi
 
     # Install PsychoPy
