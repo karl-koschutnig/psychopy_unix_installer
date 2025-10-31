@@ -1771,30 +1771,44 @@ create_psychtoolbox_stub() {
     init_py=$(cat <<'PY'
 """
 Lightweight shim for psychtoolbox on macOS when native binary fails to load.
-This provides minimal symbols so PsychoPy UI can start. Any functional use
-will raise a clear error explaining how to enable the real psychtoolbox.
+This provides basic timing functions so PsychoPy can start. HID/audio features will raise clear errors.
 """
-from . import audio  # noqa: F401
+import time as _time
 
 __version__ = "shim"
-PY
-)
 
-    audio_py=$(cat <<'PY'
-class _PTBUnavailable:
+# Provide basic timing functions that PsychoPy needs
+def GetSecs():
+    """Return time in seconds since an arbitrary epoch (compatible with PsychoPy's usage)."""
+    return _time.time()
+
+def WaitSecs(duration):
+    """Wait for specified duration in seconds."""
+    _time.sleep(duration)
+
+# Stub for audio module
+class _PTBAudioUnavailable:
     def __getattr__(self, name):
         raise RuntimeError(
-            "psychtoolbox is unavailable on this macOS install due to libusb linking. "
-            "If you need PTB audio/HID, install libusb via Homebrew and rebuild psychtoolbox "
-            "inside PsychoPy's venv with appropriate env vars (PKG_CONFIG_PATH/LDFLAGS/CPPFLAGS)."
+            "psychtoolbox.audio is unavailable on this macOS install due to libusb linking. "
+            "For audio features, rebuild psychtoolbox with Homebrew libusb properly linked."
         )
 
-audio = _PTBUnavailable()
+audio = _PTBAudioUnavailable()
+
+# Stub for PsychHID
+class _PTBHIDUnavailable:
+    def __getattr__(self, name):
+        raise RuntimeError(
+            "psychtoolbox.PsychHID is unavailable on this macOS install due to libusb linking. "
+            "For HID features, rebuild psychtoolbox with Homebrew libusb properly linked."
+        )
+
+PsychHID = _PTBHIDUnavailable()
 PY
 )
 
     printf "%s\n" "${init_py}" | tee "${stub_root}/__init__.py" >/dev/null
-    printf "%s\n" "${audio_py}" | tee "${stub_root}/audio.py" >/dev/null
     set_shared_permissions "${PSYCHOPY_DIR}/stubs" recursive
 }
 
