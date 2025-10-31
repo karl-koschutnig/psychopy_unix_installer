@@ -1705,6 +1705,13 @@ install_wxpython() {
         check_pypi_for_version wxpython "${WXPYTHON_VERSION}"
     fi
 
+    # Check if trying to build from source on macOS
+    if [[ "${OSTYPE}" =~ darwin ]] && ([ "${BUILD_WXPYTHON}" = true ] || [ "${WXPYTHON_VERSION}" = "git" ]); then
+        log_message "WARNING: Building wxPython from source on macOS is not supported due to missing system headers and build complexity."
+        log_message "INFO: Falling back to pre-built wheel installation instead."
+        BUILD_WXPYTHON=false
+    fi
+
     if [ "${WXPYTHON_VERSION}" = "git" ]; then
         log_message "INFO: Installing wxPython build dependencies. This might take a while ..."
         install_dependencies wxpython_deps
@@ -1802,8 +1809,16 @@ build_wxpython() {
     install_dependencies wxpython_deps
 
     # Check /tmp size and prompt to increase if <4GB
-    tmp_size_gb=$(df -B1G --output=size /tmp 2>/dev/null | tail -n1 | tr -d ' ' || echo 0)
-    if [ "${tmp_size_gb}" -lt 4 ]; then
+    # Use platform-agnostic df command for macOS and Linux compatibility
+    if [[ "${OSTYPE}" =~ darwin ]]; then
+        # macOS: df -H returns human-readable sizes
+        tmp_size_gb=$(df -H /tmp 2>/dev/null | tail -n1 | awk '{print $2}' | sed 's/G//' || echo 0)
+    else
+        # Linux: df -B1G
+        tmp_size_gb=$(df -B1G --output=size /tmp 2>/dev/null | tail -n1 | tr -d ' ' || echo 0)
+    fi
+    tmp_size_gb=${tmp_size_gb%.*}  # Remove decimal part if present
+    if [ -n "${tmp_size_gb}" ] && [ "${tmp_size_gb}" -lt 4 ]; then
         if [ "${NON_INTERACTIVE}" = false ]; then
             response=$(prompt_user "Your /tmp partition is only ${tmp_size_gb}GB. wxPython build may fail. Do you want to temporarily increase /tmp size until next reboot?" \
                 "Increase to 4GB" \
